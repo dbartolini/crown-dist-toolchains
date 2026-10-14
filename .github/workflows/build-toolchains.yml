@@ -1,0 +1,144 @@
+name: Build GCC and GTK4
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - build-gcc16-ubuntu2204.sh
+      - build-gtk4.sh
+      - .github/workflows/build-toolchains.yml
+
+permissions:
+  contents: read
+
+env:
+  GCC_VERSION: 16.2.0
+  GTK_VERSION: 4.22.5
+  GCC_ROOT: /opt/gcc-16.2.0
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gcc:
+    name: Build GCC
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and test GCC
+        id: build_gcc
+        env:
+          WORK_ROOT: ${{ runner.temp }}/gcc-build
+          OUT_DIR: ${{ runner.temp }}/gcc-artifact
+        run: |
+          export PREFIX="$GCC_ROOT"
+          export LD_LIBRARY_PATH="$GCC_ROOT/lib64:$GCC_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          bash build-gcc16-ubuntu2204.sh
+
+      - name: Show GCC failure diagnostics
+        if: failure() && steps.build_gcc.outcome == 'failure'
+        env:
+          WORK_ROOT: ${{ runner.temp }}/gcc-build
+        run: |
+          if [[ -f "$WORK_ROOT/build/config.log" ]]; then
+            cat "$WORK_ROOT/build/config.log"
+          fi
+          if [[ -d "$WORK_ROOT" ]]; then
+            findmnt --target "$WORK_ROOT"
+            df -h "$WORK_ROOT"
+          fi
+
+      - name: Upload GCC failure logs
+        if: failure() && steps.build_gcc.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gcc-${{ env.GCC_VERSION }}-failure-logs
+          path: ${{ runner.temp }}/gcc-build/**/config.log
+          if-no-files-found: warn
+
+      - name: Verify GCC package
+        working-directory: ${{ runner.temp }}/gcc-artifact
+        run: |
+          archive="gcc-${GCC_VERSION}-ubuntu22.04-amd64.tar.xz"
+          test -s "$archive"
+          test -s "$archive.sha256"
+          sha256sum --check "$archive.sha256"
+
+      - name: Upload GCC package
+        uses: actions/upload-artifact@v7
+        with:
+          name: gcc-${{ env.GCC_VERSION }}-ubuntu22.04-amd64
+          path: |
+            ${{ runner.temp }}/gcc-artifact/gcc-${{ env.GCC_VERSION }}-ubuntu22.04-amd64.tar.xz
+            ${{ runner.temp }}/gcc-artifact/gcc-${{ env.GCC_VERSION }}-ubuntu22.04-amd64.tar.xz.sha256
+          if-no-files-found: error
+          compression-level: 0
+
+  gtk4:
+    name: Build GTK4 with GCC
+    needs: gcc
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download GCC package
+        uses: actions/download-artifact@v7
+        with:
+          name: gcc-${{ env.GCC_VERSION }}-ubuntu22.04-amd64
+          path: ${{ runner.temp }}/gcc-artifact
+
+      - name: Verify and install GCC
+        working-directory: ${{ runner.temp }}/gcc-artifact
+        run: |
+          archive="gcc-${GCC_VERSION}-ubuntu22.04-amd64.tar.xz"
+          sha256sum --check "$archive.sha256"
+          sudo tar -xJf "$archive" -C /
+          "$GCC_ROOT/bin/gcc" --version
+          "$GCC_ROOT/bin/g++" --version
+          echo "$GCC_ROOT/bin" >> "$GITHUB_PATH"
+
+      - name: Build and test GTK4
+        id: build_gtk4
+        env:
+          WORK_ROOT: ${{ runner.temp }}/gtk4-build
+          OUT_DIR: ${{ runner.temp }}/gtk4-artifact
+        run: |
+          export LD_LIBRARY_PATH="$GCC_ROOT/lib64:$GCC_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          bash build-gtk4.sh linux
+
+      - name: Upload GTK4 failure logs
+        if: failure() && steps.build_gtk4.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gtk-${{ env.GTK_VERSION }}-failure-logs
+          path: |
+            ${{ runner.temp }}/gtk4-build/build/**/meson-logs/*
+            ${{ runner.temp }}/gtk4-build/build/**/config.log
+            ${{ runner.temp }}/gtk4-build/build/**/CMakeFiles/CMake*Log*
+          if-no-files-found: warn
+
+      - name: Verify GTK4 package
+        working-directory: ${{ runner.temp }}/gtk4-artifact
+        run: |
+          archive="gtk-${GTK_VERSION}-ubuntu22.04-amd64.tar.xz"
+          test -s "$archive"
+          test -s "$archive.sha256"
+          sha256sum --check "$archive.sha256"
+
+      - name: Upload GTK4 package
+        uses: actions/upload-artifact@v7
+        with:
+          name: gtk-${{ env.GTK_VERSION }}-ubuntu22.04-amd64
+          path: |
+            ${{ runner.temp }}/gtk4-artifact/gtk-${{ env.GTK_VERSION }}-ubuntu22.04-amd64.tar.xz
+            ${{ runner.temp }}/gtk4-artifact/gtk-${{ env.GTK_VERSION }}-ubuntu22.04-amd64.tar.xz.sha256
+          if-no-files-found: error
+          compression-level: 0
