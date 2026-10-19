@@ -81,7 +81,7 @@ case "$TARGET" in
     sudo apt-get install -y \
       git ca-certificates curl xz-utils make ninja-build pkg-config \
       python3 python3-dev python3-venv python3-pip cmake bison flex gperf nasm \
-      autoconf automake libtool gettext sassc \
+      autoconf automake libtool gettext sassc libssl-dev zlib1g-dev \
       libdbus-1-dev libdrm-dev \
       libx11-dev libxext-dev libxrender-dev libxrandr-dev \
       libxi-dev libxinerama-dev libxfixes-dev libxcursor-dev libxdamage-dev \
@@ -104,7 +104,7 @@ case "$TARGET" in
       "${PKG_PREFIX}-pkgconf" "${PKG_PREFIX}-cmake" \
       "${PKG_PREFIX}-libiconv" "${PKG_PREFIX}-gettext" \
       "${PKG_PREFIX}-python" "${PKG_PREFIX}-python-mako" "${PKG_PREFIX}-python-setuptools" \
-      "${PKG_PREFIX}-nasm" \
+      "${PKG_PREFIX}-nasm" "${PKG_PREFIX}-rust" "${PKG_PREFIX}-cargo-c" \
       "${PKG_PREFIX}-sassc"
     if [[ $VULKAN -eq 1 ]]; then
       pacman -S --needed --noconfirm \
@@ -168,6 +168,24 @@ require ninja
 require git
 require curl
 require sha256sum
+
+# librsvg requires newer Rust than Ubuntu 22.04 provides.
+if [[ "$TARGET" == linux ]]; then
+  export CARGO_HOME="$WORK_ROOT/cargo"
+  export RUSTUP_HOME="$WORK_ROOT/rustup"
+  export RUSTUP_TOOLCHAIN=1.92.0
+  curl --fail --location --retry 5 --retry-all-errors \
+    --output "$DOWNLOAD_DIR/rustup-init.sh" https://sh.rustup.rs
+  RUSTUP_VERSION=1.28.2 sh "$DOWNLOAD_DIR/rustup-init.sh" \
+    -y --profile minimal --default-toolchain 1.92.0 --no-modify-path
+  export PATH="$CARGO_HOME/bin:$PATH"
+  cargo install cargo-c --version 0.10.15 --locked --jobs "$JOBS"
+fi
+require rustc
+require cargo
+require cargo-cbuild
+export CARGO_BUILD_JOBS="$JOBS"
+export RUSTFLAGS="-C linker=$CC${RUSTFLAGS:+ $RUSTFLAGS}"
 
 # Build dependencies into the same prefix GTK will use, as documented upstream.
 # https://docs.gtk.org/gtk4/building.html#building-and-testing-gtk
@@ -313,9 +331,22 @@ fetch_gnome gdk-pixbuf 2.43.3
 build_meson gdk-pixbuf -Dintrospection=enabled -Ddocumentation=false -Dman=false \
   -Dtests=false -Dinstalled_tests=false -Dpng=enabled -Djpeg=enabled -Dtiff=enabled \
   -Dgif=enabled -Dglycin=disabled -Dbuiltin_loaders=all
+fetch_gnome libxml2 2.14.6
+build_cmake libxml2 -DLIBXML2_WITH_PYTHON=OFF -DLIBXML2_WITH_PROGRAMS=OFF \
+  -DLIBXML2_WITH_TESTS=OFF -DLIBXML2_WITH_LZMA=OFF -DLIBXML2_WITH_ZLIB=OFF
 fetch_gnome pango 1.56.4
 build_meson pango -Dintrospection=enabled -Ddocumentation=false -Dman-pages=false \
   -Dbuild-testsuite=false -Dbuild-examples=false -Dsysprof=disabled -Dlibthai=disabled -Dxft=disabled
+# SVG decoding is provided by librsvg's GdkPixbuf module.
+fetch_gnome librsvg 2.62.4
+build_meson librsvg -Dintrospection=enabled -Dpixbuf=enabled -Dpixbuf-loader=enabled \
+  -Ddocs=disabled -Dvala=disabled -Dtests=false -Drsvg-convert=disabled -Davif=disabled
+GDK_PIXBUF_MODULEDIR=$(pkg-config --variable=gdk_pixbuf_moduledir gdk-pixbuf-2.0)
+GDK_PIXBUF_MODULE_FILE=$(pkg-config --variable=gdk_pixbuf_cache_file gdk-pixbuf-2.0)
+export GDK_PIXBUF_MODULEDIR GDK_PIXBUF_MODULE_FILE
+"$PREFIX/bin/gdk-pixbuf-query-loaders" --update-cache
+grep -q '"svg"' "$GDK_PIXBUF_MODULE_FILE" || fail 'SVG loader is missing from the GdkPixbuf cache'
+
 fetch_gnome graphene 1.10.8
 build_meson graphene -Dintrospection=enabled -Dgtk_doc=false -Dtests=false -Dinstalled_tests=false
 fetch_source libepoxy https://github.com/anholt/libepoxy/archive/1.5.10.tar.gz \
@@ -374,13 +405,25 @@ else
 fi
 build_meson gtk "${MESON_OPTS[@]}"
 
+# Install the icon themes and their inheritance chain into this SDK.
+fetch_source hicolor-icon-theme https://icon-theme.freedesktop.org/releases/hicolor-icon-theme-0.18.tar.xz \
+  db0e50a80aa3bf64bb45cbca5cf9f75efd9348cf2ac690b907435238c3cf81d7
+build_meson hicolor-icon-theme
+fetch_gnome adwaita-icon-theme-legacy 46.2
+build_meson adwaita-icon-theme-legacy
+fetch_gnome adwaita-icon-theme 51.0
+build_meson adwaita-icon-theme
+for icon_theme in AdwaitaLegacy Adwaita; do
+  "$PREFIX/bin/gtk4-update-icon-cache" -qtf "$PREFIX/share/icons/$icon_theme"
+done
+
 # Stage the complete common prefix for the downloadable SDK.
 mkdir -p "$STAGE_DIR$PREFIX"
 cp -a "$PREFIX/." "$STAGE_DIR$PREFIX/"
 
 SDK_DIR="$STAGE_DIR$PREFIX"
 [[ -d "$SDK_DIR" ]] || fail 'Staged install directory is missing'
-SDK_DEPS=(gtk4 gobject-introspection-1.0 glib-2.0 gdk-pixbuf-2.0 pango cairo harfbuzz graphene-gobject-1.0 epoxy
+SDK_DEPS=(librsvg-2.0 libxml-2.0 gtk4 gobject-introspection-1.0 glib-2.0 gdk-pixbuf-2.0 pango cairo harfbuzz graphene-gobject-1.0 epoxy
   fribidi libpng libjpeg libtiff-4 pixman-1 libpcre2-8 libffi zlib)
 if [[ "$TARGET" == linux ]]; then
   SDK_DEPS+=(fontconfig freetype2 expat xkbcommon xkbcommon-x11)
@@ -394,6 +437,14 @@ if [[ "$TARGET" == linux ]]; then
 fi
 for dep in "${SDK_DEPS[@]}"; do
   find "$SDK_DIR" -name "${dep}.pc" -print -quit | grep -q . || fail "Missing source-built dependency in SDK: $dep"
+done
+
+[[ -s "$SDK_DIR/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache" ]] || fail 'Missing GdkPixbuf loader cache'
+for icon_theme in hicolor AdwaitaLegacy Adwaita; do
+  [[ -s "$SDK_DIR/share/icons/$icon_theme/index.theme" ]] || fail "Missing icon theme: $icon_theme"
+done
+for icon_theme in AdwaitaLegacy Adwaita; do
+  [[ -s "$SDK_DIR/share/icons/$icon_theme/icon-theme.cache" ]] || fail "Missing icon cache: $icon_theme"
 done
 
 if [[ "$TARGET" == mingw ]]; then
@@ -437,13 +488,6 @@ if [[ "$TARGET" == mingw ]]; then
       PE_FILES+=("$SDK_DIR/bin/${candidate##*/}")
     done < <(objdump -p "$binary" 2>/dev/null | awk '/DLL Name:/ {print $3}')
   done
-  # Icons and application schemas are runtime assets, not shared libraries.
-  for icon_theme in hicolor Adwaita; do
-    if [[ -d "$MINGW_PREFIX/share/icons/$icon_theme" ]]; then
-      mkdir -p "$SDK_DIR/share/icons"
-      cp -a "$MINGW_PREFIX/share/icons/$icon_theme" "$SDK_DIR/share/icons/"
-    fi
-  done
   if [[ $PACKAGE_ONLY -eq 0 ]]; then
     cp -a "$SDK_DIR/bin/." "$PREFIX/bin/"
   fi
@@ -457,6 +501,11 @@ export PATH="$GTK4_HOME/bin:$PATH"
 export PKG_CONFIG_PATH="$GTK4_HOME/lib/pkgconfig:$GTK4_HOME/share/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 export GI_TYPELIB_PATH="$GTK4_HOME/lib/girepository-1.0${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
 export XDG_DATA_DIRS="$GTK4_HOME/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export GDK_PIXBUF_MODULEDIR="$GTK4_HOME/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+if [[ -n ${MSYSTEM:-} ]]; then
+  GDK_PIXBUF_MODULEDIR="$(cygpath -m "$GDK_PIXBUF_MODULEDIR")"
+fi
+export GDK_PIXBUF_MODULE_FILE="${GDK_PIXBUF_MODULEDIR%/loaders}/loaders.cache"
 if [[ -z ${MSYSTEM:-} ]]; then
   export LD_LIBRARY_PATH="$GTK4_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
@@ -472,14 +521,34 @@ source "$PREFIX/activate.sh"
 [[ -s "$SDK_DIR/lib/girepository-1.0/Gtk-4.0.typelib" ]] || fail 'Missing GTK introspection typelib'
 cat > "$WORK_ROOT/gtk-smoke.c" <<'SMOKE'
 #include <gtk/gtk.h>
-int main(void) { return gtk_get_major_version() == 4 ? 0 : 1; }
+#include <gdk-pixbuf/gdk-pixbuf.h>
+int main(int argc, char **argv) {
+  if (argc != 2 || gtk_get_major_version() != 4) return 1;
+  GError *error = NULL;
+  GdkPixbuf *image = gdk_pixbuf_new_from_file(argv[1], &error);
+  if (!image) {
+    g_printerr("SVG decoding failed: %s\n", error->message);
+    g_clear_error(&error);
+    return 1;
+  }
+  const guchar *pixel = gdk_pixbuf_get_pixels(image);
+  int valid = gdk_pixbuf_get_width(image) == 8 && gdk_pixbuf_get_height(image) == 8
+    && pixel[0] == 0x12 && pixel[1] == 0x34 && pixel[2] == 0x56;
+  g_object_unref(image);
+  return valid ? 0 : 1;
+}
 SMOKE
+cat > "$WORK_ROOT/svg-smoke.svg" <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">
+  <rect width="8" height="8" fill="#123456"/>
+</svg>
+SVG
 SMOKE_EXE="$WORK_ROOT/gtk-smoke"
 if [[ "$TARGET" == mingw ]]; then SMOKE_EXE+=".exe"; fi
 # Intentional splitting of pkg-config's compiler/linker flags.
 # shellcheck disable=SC2046
 "$CC" "$WORK_ROOT/gtk-smoke.c" $(pkg-config --cflags --libs gtk4) -o "$SMOKE_EXE"
-"$SMOKE_EXE"
+"$SMOKE_EXE" "$WORK_ROOT/svg-smoke.svg"
 
 # The archive and its .sha256 contain no absolute filenames.
 cd "$OUT_DIR"
