@@ -302,8 +302,8 @@ build_cmake expat -DEXPAT_BUILD_TOOLS=OFF -DEXPAT_BUILD_EXAMPLES=OFF \
 fetch_source fontconfig https://gitlab.freedesktop.org/fontconfig/fontconfig/-/archive/2.15.0/fontconfig-2.15.0.tar.gz \
   cdebb4b805d33e9bdefcc0ef9743db638d2acb21139bbe1a6a85878d4c3e8c9e
 build_meson fontconfig -Ddoc=disabled -Dtests=disabled -Dcache-build=disabled
-fetch_source pixman https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-0.43.4/pixman-pixman-0.43.4.tar.gz \
-  2af0acd451e22ae9d86d3c8aa45fcc19e4cc33e86bec311e5328cc2171ff1720
+fetch_source pixman https://www.cairographics.org/releases/pixman-0.43.4.tar.gz \
+  a0624db90180c7ddb79fc7a9151093dc37c646d8c38d3f232f767cf64b85a226
 build_meson pixman -Dtests=disabled -Ddemos=disabled -Dgtk=disabled
 fetch_source cairo https://gitlab.freedesktop.org/cairo/cairo/-/archive/1.18.2/cairo-1.18.2.tar.gz \
   7bbfb469b89b1f60584b4f39a1366789b7625a5796905870e108b6c0e8ca8216
