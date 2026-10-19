@@ -264,7 +264,7 @@ build_cmake libjpeg-turbo -DENABLE_SHARED=ON -DENABLE_STATIC=OFF -DWITH_JPEG8=ON
 fetch_source libtiff https://download.osgeo.org/libtiff/tiff-4.7.0.tar.xz \
   273a0a73b1f0bed640afee4a5df0337357ced5b53d3d5d1c405b936501f71017
 build_cmake libtiff -Dtiff-tools=OFF -Dtiff-tests=OFF -Dtiff-contrib=OFF -Dtiff-docs=OFF \
-  -Dzlib=ON -Djpeg=ON -Dlibdeflate=OFF -Dlzma=OFF -Dzstd=OFF -Dwebp=OFF -Dlerc=OFF
+  -Dzlib=ON -Djpeg=ON -Djbig=OFF -Dlibdeflate=OFF -Dlzma=OFF -Dzstd=OFF -Dwebp=OFF -Dlerc=OFF
 fetch_source freetype https://download.savannah.gnu.org/releases/freetype/freetype-2.13.2.tar.xz \
   12991c4e55c506dd7f9b765933e62fd2be2e06d421505d7950a132e4f1bb484d
 build_cmake freetype -DFT_REQUIRE_ZLIB=ON -DFT_REQUIRE_PNG=ON \
