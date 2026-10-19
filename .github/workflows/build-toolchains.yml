@@ -17,6 +17,8 @@ env:
   GTK_VERSION: 4.22.5
   GTK3_VERSION: 3.24.52
   GCC_ROOT: /opt/gcc-16.2.0
+  GCC16_GDRIVE_FILE_ID: 1QsuKc06WHJj6FNuohwyG99L5f5rUww1p
+  GCC16_SHA256_GDRIVE_FILE_ID: 1mn6bUGPKPcAkhUlrHhieRH89as0Eqa5y
 
 defaults:
   run:
@@ -24,7 +26,7 @@ defaults:
 
 jobs:
   gcc:
-    name: Build GCC
+    name: Prepare prebuilt GCC
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
@@ -32,8 +34,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Download prebuilt GCC package
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir -p gcc-artifact
+          cd gcc-artifact
+          archive="gcc-${GCC_VERSION}-ubuntu22.04-amd64.tar.xz"
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://drive.usercontent.google.com/download?id=${GCC16_GDRIVE_FILE_ID}&export=download&confirm=t" \
+            --output "$archive"
+          curl --fail --location --retry 5 --retry-all-errors \
+            "https://drive.usercontent.google.com/download?id=${GCC16_SHA256_GDRIVE_FILE_ID}&export=download&confirm=t" \
+            --output "$archive.sha256"
+
       - name: Build and test GCC
         id: build_gcc
+        # Temporarily use prebuilt GCC while testing the GTK3/GTK4 scripts.
+        if: ${{ false }}
         env:
           WORK_ROOT: ${{ runner.temp }}/gcc-build
           OUT_DIR: ${{ runner.temp }}/gcc-artifact
