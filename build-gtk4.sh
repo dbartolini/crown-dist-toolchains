@@ -117,6 +117,9 @@ case "$TARGET" in
   *) fail 'Target must be linux or mingw' ;;
 esac
 
+export CFLAGS="${CFLAGS:+$CFLAGS }-msse4.2"
+export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }-msse4.2"
+
 [[ "$PREFIX" == /* ]] || fail 'PREFIX must be an absolute POSIX-style path'
 [[ "$PREFIX" != *' '* ]] || fail 'PREFIX may not contain whitespace'
 [[ "$PREFIX" != / ]] || fail 'Refusing to install to /'
@@ -185,7 +188,7 @@ require rustc
 require cargo
 require cargo-cbuild
 export CARGO_BUILD_JOBS="$JOBS"
-export RUSTFLAGS="-C linker=$CC${RUSTFLAGS:+ $RUSTFLAGS}"
+export RUSTFLAGS="-C linker=$CC${RUSTFLAGS:+ $RUSTFLAGS} -C target-feature=+sse4.2"
 
 # Build dependencies into the same prefix GTK will use, as documented upstream.
 # https://docs.gtk.org/gtk4/building.html#building-and-testing-gtk
@@ -265,7 +268,7 @@ fetch_source libffi https://github.com/libffi/libffi/releases/download/v3.4.6/li
 mkdir -p "$BUILD_DIR/libffi"
 (
   cd "$BUILD_DIR/libffi"
-  "$SOURCES_DIR/libffi/configure" --prefix="$PREFIX" --libdir="$PREFIX/lib" \
+  CFLAGS="-g -O2 $CFLAGS" "$SOURCES_DIR/libffi/configure" --prefix="$PREFIX" --libdir="$PREFIX/lib" \
     --host="$("$CC" -dumpmachine)" --disable-static --enable-shared
   make -j "$JOBS"
   make install

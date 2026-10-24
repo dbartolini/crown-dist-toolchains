@@ -77,6 +77,10 @@ fi
 
 # Avoid inherited compiler settings, including GCC's relocation override GCC_ROOT.
 unset CC CXX CPP CFLAGS CXXFLAGS LDFLAGS LIBRARY_PATH CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH GCC_ROOT || true
+export CFLAGS="-g -O2 -msse4.2"
+export CXXFLAGS="$CFLAGS"
+export CFLAGS_FOR_TARGET="$CFLAGS"
+export CXXFLAGS_FOR_TARGET="$CXXFLAGS"
 export CONFIG_SHELL=/bin/bash
 
 [[ -r /etc/os-release ]] || die "/etc/os-release not found"
@@ -215,7 +219,7 @@ CC="$BOOTSTRAP_CC" CXX="$BOOTSTRAP_CXX" \
 [[ -f Makefile ]] || die "configure completed without creating ${BUILD_DIR}/Makefile"
 
 log "Building GCC ${GCC_VERSION}"
-make -j"$JOBS"
+make -j"$JOBS" STAGE1_CFLAGS="-g -msse4.2" BOOT_CFLAGS="$CFLAGS"
 
 log "Staging installation under DESTDIR"
 rm -rf "$STAGE_DIR"
