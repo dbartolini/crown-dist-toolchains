@@ -360,7 +360,7 @@ MESON_OPTS=(-Dintrospection=true -Dgtk_doc=false -Dman=false
   -Dtests=false -Dinstalled_tests=false -Ddemos=false -Dexamples=false
   -Dcloudproviders=false -Dprofiler=false -Dtracker3=false -Dcolord=no -Dprint_backends=file)
 if [[ "$TARGET" == linux ]]; then
-  MESON_OPTS+=(-Dx11_backend=true -Dbroadway_backend=true)
+  MESON_OPTS+=(-Dx11_backend=true -Dbroadway_backend=false)
   if [[ $WAYLAND -eq 1 ]]; then
     MESON_OPTS+=(-Dwayland_backend=true)
   else

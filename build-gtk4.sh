@@ -394,7 +394,7 @@ else
   MESON_OPTS+=(-Dvulkan=disabled)
 fi
 if [[ "$TARGET" == linux ]]; then
-  MESON_OPTS+=(-Dx11-backend=true -Dbroadway-backend=true)
+  MESON_OPTS+=(-Dx11-backend=true -Dbroadway-backend=false)
   if [[ $WAYLAND -eq 1 ]]; then
     MESON_OPTS+=(-Dwayland-backend=true)
   else
